@@ -6,6 +6,7 @@
 
 - [docs/model.md](docs/model.md) — математическая постановка задачи.
 - [docs/findings.md](docs/findings.md) — что уже показали данные, открытые вопросы и запросы данных.
+- [docs/handoff.md](docs/handoff.md) — как продолжить работу в новой сессии.
 
 ## Структура
 
@@ -43,5 +44,6 @@ python analysis/01_vendor_orders.py
 YANDEX_OAUTH_TOKEN=... python analysis/yandex_api.py conversions 713315432
 ```
 
-Токен Яндекса берётся только из переменной окружения `YANDEX_OAUTH_TOKEN` и видит только
-аккаунт Директа своего логина.
+Токены Яндекса берутся только из переменных окружения: `YANDEX_OAUTH_TOKEN` (Метрика и
+аккаунт Директа своего логина) и `YANDEX_DIRECT_TOKENS` — JSON `{"логин": "токен"}` для других
+аккаунтов Директа. В файлы и в репозиторий токены не кладём.
