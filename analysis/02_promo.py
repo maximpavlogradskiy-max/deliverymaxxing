@@ -5,7 +5,7 @@
 """
 import pandas as pd
 
-from common import REST, days_per_arm, load_rk_payments, load_vendor_orders
+from common import REST, days_per_arm, load_promo_weekly, load_rk_payments, load_vendor_orders
 
 pd.set_option("display.width", 200)
 
@@ -63,6 +63,25 @@ for y in (2024, 2025, 2026):
                              ya_rk[f"{y}-09-14":f"{y}-10-04"].mean())
     dip = during / ((14 * before + 21 * after) / 35) - 1
     print(f"   {y}: до {before:5.1f}  во время {during:5.1f}  после {after:5.1f}  провал {dip:+.0%}")
+
+# --- что произошло с продвижением: недельный отчёт по 4 витринам ---
+pr = load_promo_weekly().groupby("week")[["impressions", "clicks", "orders", "cost", "bonus"]].sum()
+pr["all_orders"] = done.groupby(done["created"].dt.to_period("W-SUN").dt.start_time).size().reindex(pr.index)
+print("\nПродвижение по неделям (сумма 4 витрин) и все заказы агрегаторов:")
+print(pr.loc["2026-07-27":].round(0).astype("Int64").to_string())
+print(f"Бонусами за весь период оплачено: {pr['bonus'].sum():.0f}₽")
+
+# Оценка Вальда: окна до и после — недели с полной видимостью, «во время» — две недели минимума.
+before, cut, after = pr.loc["2026-08-03":"2026-08-17"], pr.loc["2026-08-31":"2026-09-07"], pr.loc["2026-09-21":"2026-09-28"]
+base = pd.concat([before, after]).mean()
+d_promo, d_all, d_cost = (cut[c].mean() - base[c] for c in ("orders", "all_orders", "cost"))
+q = d_all / d_promo
+print(f"Недели урезания vs соседние: показы {cut['impressions'].mean() / base['impressions'] - 1:+.0%}, "
+      f"заказы продвижения {d_promo:+.0f}, все заказы {d_all:+.0f}, расход {d_cost:+.0f}₽ в неделю")
+print(f"Оценка Вальда q = Δвсех / Δпродвижения = {q:.2f} (если весь спад вызван продвижением)")
+lost_rev = -d_all * done["amount"].mean()
+print(f"Безубыточная маржинальность полного продвижения: {-d_cost / lost_rev:.0%}, "
+      f"если половина спада — сезон: {-d_cost / (lost_rev / 2):.0%}")
 
 # --- мощность эксперимента с чередованием по дням ---
 daily = done[done["created"] < "2026-10-05"].groupby(done["created"].dt.normalize()).size()

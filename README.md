@@ -31,7 +31,8 @@ data/raw/                выгрузки (в git не попадают)
 
 | Файл | Откуда |
 |---|---|
-| `vendor_orders.xlsx` | Яндекс Еда Вендор → Заказы → выгрузка отчёта по заказам |
+| `vendor_orders.xlsx` | Яндекс Еда Вендор → Финансы → «История заказов» |
+| `vendor_promo_weekly.xlsx` | Яндекс Еда Вендор → продвижение: отчёт по неделям и витринам |
 | `fact_rk7_hourly.csv`, `fact_rk7_payments_daily.csv` | витрины r_keeper (`marts/`) |
 | `riga_orders.parquet`, `riga_lines.parquet`, `dim_dish.parquet`, `dim_category.parquet`, `riga_sh_daily.parquet` | `build_riga_pilot.py` из витрин `marts/` |
 

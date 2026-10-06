@@ -13,6 +13,7 @@ RAW = ROOT / "data" / "raw"
 
 FILES = {
     "vendor_orders": "vendor_orders.xlsx",       # Яндекс Еда Вендор → отчёт по заказам
+    "promo_weekly": "vendor_promo_weekly.xlsx",  # Вендор → продвижение: витрина × неделя
     "rk_hourly": "fact_rk7_hourly.csv",          # витрина r_keeper: ресторан × день × час × канал
     "rk_payments": "fact_rk7_payments_daily.csv",  # витрина r_keeper: ресторан × день × вид оплаты
     "orders": "riga_orders.parquet",             # чеки RIGA с 2025 года (build_riga_pilot.py)
@@ -56,6 +57,23 @@ def load_vendor_orders():
     v["prep_min"] = (v["ready"] - v["created"]).dt.total_seconds() / 60
     v["courier_wait_min"] = (v["handed"] - v["ready"]).dt.total_seconds() / 60
     return v
+
+
+PROMO_COLUMNS = {
+    "Показы": "impressions", "Клики": "clicks", "Заказы": "orders",
+    "Выручка от продвижения": "revenue", "Затраты на продвижение": "cost", "Потрачено бонусов": "bonus",
+}
+
+
+def load_promo_weekly():
+    """Недельный отчёт продвижения по 4 витринам (Еда / Деливери × своя доставка / курьеры сервиса).
+
+    «Заказы» — то, что Яндекс приписывает продвижению, включая повторные заказы без клика.
+    """
+    r = pd.read_excel(path("promo_weekly"))
+    r = r[r["Ресторан"] != "Итого"].rename(columns=PROMO_COLUMNS)
+    r["week"] = pd.to_datetime(r["Период"].str[:10])
+    return r
 
 
 # ---------------------------------------------------------------- r_keeper
