@@ -5,7 +5,7 @@
 """
 import pandas as pd
 
-from common import load_vendor_orders, days_per_arm
+from common import REST, days_per_arm, load_rk_payments, load_vendor_orders
 
 pd.set_option("display.width", 200)
 
@@ -51,6 +51,18 @@ for name, (a, b) in periods.items():
 weekly = ye_all.groupby(ye_all["created"].dt.to_period("W")).size()
 print("По неделям (сезонный спад начался раньше урезания):",
       {str(w.start_time.date()): n for w, n in weekly.loc["2026-07-27":"2026-10-04"].items()})
+
+# --- те же календарные окна в прошлые годы (заказы Яндекса по оплатам r_keeper) ---
+pay = load_rk_payments()
+pay = pay[(pay["rest"] == REST) & (pay["category"] == "sale") & pay["currency"].str.contains("Яндекс")]
+ya_rk = pay.groupby("date")["checks"].sum()
+ya_rk = ya_rk.reindex(pd.date_range(ya_rk.index.min(), ya_rk.index.max()), fill_value=0)
+print("\nЗаказов Яндекса в день по r_keeper в те же окна (провал = «во время» к среднему соседних окон):")
+for y in (2024, 2025, 2026):
+    before, during, after = (ya_rk[f"{y}-08-17":f"{y}-08-30"].mean(), ya_rk[f"{y}-08-31":f"{y}-09-13"].mean(),
+                             ya_rk[f"{y}-09-14":f"{y}-10-04"].mean())
+    dip = during / ((14 * before + 21 * after) / 35) - 1
+    print(f"   {y}: до {before:5.1f}  во время {during:5.1f}  после {after:5.1f}  провал {dip:+.0%}")
 
 # --- мощность эксперимента с чередованием по дням ---
 daily = done[done["created"] < "2026-10-05"].groupby(done["created"].dt.normalize()).size()
