@@ -1,7 +1,8 @@
-"""Загрузка зала: сколько чеков зала открыто одновременно.
+"""Загрузка зала по столам.
 
-Чек ≠ стол: раздельный счёт даёт несколько чеков на стол, поэтому это оценка сверху.
-Загрузка = одновременно открытые чеки / число столов (число столов нужно узнать у ресторана).
+Стол занят, пока на нём открыт хотя бы один чек; «28,1» — дополнительный чек стола 28.
+Вместимость зала — сколько разных столов работало в этом месяце; веранды считаются только в дни,
+когда на них были гости. Это столы из чеков, а не план зала: сверить с управляющим.
 """
 import numpy as np
 import pandas as pd
@@ -10,40 +11,68 @@ from common import load_orders
 
 pd.set_option("display.width", 220)
 
+HALLS = ["Зал 1эт", "Зал 2эт", "Веранда1", "Веранда2"]
+SINCE = "2026-05-01"
+
 o = load_orders()
 # 10 минут – 6 часов: короче — навынос, длиннее — забытые открытые чеки
-hall = o[(o["is_visit"] == 1) & (o["channel"] == "Зал и навынос") & (o["date"] >= "2026-05-01")
-         & o["duration_min"].between(10, 360)]
+h = o[(o["is_visit"] == 1) & o["hall"].isin(HALLS) & (o["date"] >= SINCE)
+      & o["duration_min"].between(10, 360) & o["table_name"].notna()].copy()
+h["table"] = h["hall"] + " / " + h["table_name"].str.split(",").str[0].str.strip()
 
-grid = pd.date_range("2026-05-01 09:00", hall["close_time"].max().floor("D") + pd.Timedelta("23:45:00"), freq="15min")
-grid = grid[(grid.hour >= 9) & (grid.hour <= 23)]
-opens, closes = np.sort(hall["open_time"].values), np.sort(hall["close_time"].values)
+# интервалы занятости стола: пересекающиеся чеки одного стола сливаются
+busy = []
+for table, g in h.sort_values("open_time").groupby("table"):
+    start, end = None, None
+    for a, b in zip(g["open_time"], g["close_time"]):
+        if start is None or a > end:
+            if start is not None:
+                busy.append((table, start, end))
+            start, end = a, b
+        else:
+            end = max(end, b)
+    busy.append((table, start, end))
+busy = pd.DataFrame(busy, columns=["table", "start", "end"])
+busy["hall"] = busy["table"].str.split(" / ").str[0]
 
+grid = pd.date_range(f"{SINCE} 09:00", h["close_time"].max().floor("D") + pd.Timedelta("23:45:00"), freq="15min")
+grid = grid[(grid.hour >= 10) & (grid.hour <= 22)]
+occ = pd.DataFrame(index=grid)
+for hall, g in busy.groupby("hall"):
+    s, e = np.sort(g["start"].values), np.sort(g["end"].values)
+    occ[hall] = np.searchsorted(s, grid.values, side="right") - np.searchsorted(e, grid.values, side="right")
 
-def open_checks(at):
-    at = np.asarray(at, dtype="datetime64[ns]")
-    return np.searchsorted(opens, at, side="right") - np.searchsorted(closes, at, side="right")
+month = h["date"].dt.to_period("M")
+capacity_month = h.groupby([month, "hall"])["table"].nunique().unstack()
+open_days = h.groupby([h["date"], "hall"]).size().unstack().notna()   # был ли зал открыт в этот день
+cap = pd.DataFrame(index=grid, columns=HALLS, dtype=float)
+for hall in HALLS:
+    per_month = capacity_month[hall].reindex(grid.to_period("M")).to_numpy()
+    is_open = open_days[hall].reindex(grid.normalize(), fill_value=False).to_numpy()
+    cap[hall] = np.where(is_open, per_month, 0)
+print("Столов по месяцам (разные столы в чеках):")
+print(capacity_month.to_string())
 
+occ["total"] = occ[HALLS].sum(axis=1)
+cap["total"] = cap[HALLS].sum(axis=1)
+share = (occ["total"] / cap["total"]).rename("occupancy")
+share = share[cap["total"] > 0]
+weekend = share.index.dayofweek >= 5
+prof = share.groupby([weekend, share.index.hour]).agg(mean="mean", p90=lambda s: s.quantile(.9))
+print("\nЗанято столов от работающих, весь ресторан (май–октябрь 2026):")
+print((100 * prof).unstack(0).round(0).T.to_string())
 
-c = pd.DataFrame({"t": grid, "open_checks": open_checks(grid.values)})
-c["weekend"] = c["t"].dt.dayofweek >= 5
-prof = c.groupby(["weekend", c["t"].dt.hour])["open_checks"].agg(mean="mean", p90=lambda s: s.quantile(.9))
-print("Одновременно открытых чеков зала (май–октябрь 2026):")
-print(prof.unstack(0).round(1).T.to_string())
+peak = share[weekend & (share.index.hour >= 13) & (share.index.hour <= 19)]
+print(f"\nВыходные 13–20: занято в среднем {peak.mean():.0%}; доля времени ≥ 85% — {(peak >= .85).mean():.0%}, "
+      f"≥ 95% — {(peak >= .95).mean():.0%}")
 
-daily_max = c.groupby(c["t"].dt.date)["open_checks"].max()
-print("\nМаксимум за день, квантили:", daily_max.quantile([.5, .75, .9, .95]).round(0).to_dict())
-print("Самые загруженные дни:", {str(k): int(v) for k, v in daily_max.nlargest(5).items()})
+by_hall = pd.DataFrame({hall: occ[hall][cap[hall] > 0] / cap[hall][cap[hall] > 0] for hall in HALLS})
+wk_peak = by_hall[(by_hall.index.dayofweek >= 5) & (by_hall.index.hour >= 13) & (by_hall.index.hour <= 19)]
+print("По залам в выходные 13–20, средняя загрузка и p90:")
+print(pd.DataFrame({"mean_%": 100 * wk_peak.mean(), "p90_%": 100 * wk_peak.quantile(.9)}).round(0).to_string())
 
-# Закон Литтла L = λ·W как проверка согласованности данных
-wk = hall[(hall["open_time"].dt.dayofweek >= 5) & hall["open_time"].dt.hour.between(12, 20)]
-lam = len(wk) / (wk["open_time"].dt.date.nunique() * 9 * 60)
-measured = c[c["weekend"] & c["t"].dt.hour.between(12, 20)]["open_checks"].mean()
-print(f"\nВыходные 12–21: λ = {lam:.3f} чека/мин × W = {wk['duration_min'].mean():.0f} мин = "
-      f"L = {lam * wk['duration_min'].mean():.1f}; измерено {measured:.1f}")
-
-# Признак насыщения: растёт ли длительность визита, когда зал полон
-hall = hall.assign(open_at_arrival=open_checks(hall["open_time"].values))
-g = hall.groupby(pd.cut(hall["open_at_arrival"], [0, 10, 20, 30, 40, 60, 500]), observed=True)["duration_min"]
-print("\nДлительность визита (медиана, мин) по числу открытых чеков при приходе:")
+# Признак насыщения: растёт ли длительность визита, когда занято больше столов
+h["occ_at_arrival"] = share.reindex(h["open_time"].dt.floor("15min")).to_numpy()
+g = h.groupby(pd.cut(h["occ_at_arrival"], [0, .3, .5, .7, .85, 1.5]), observed=True)["duration_min"]
+print("\nДлительность визита (медиана, мин) по загрузке зала при приходе:")
 print(pd.DataFrame({"n": g.size(), "duration_med": g.median().round(0)}).to_string())

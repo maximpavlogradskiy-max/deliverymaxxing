@@ -124,22 +124,41 @@ BAR_PATTERN = (r"НАПИТ|БАР|АЛКО|ВИН|КОФЕ|ЧАЙ|МОЛОК|П
                r"|ИГРИСТ|ШАМПАН")
 
 
-def kitchen_lines(since="2026-05-01"):
-    """Позиции-блюда кухни (без бара, добавок и служебных) с каналом чека.
+NOT_KITCHEN = {"бар", "бар зал", "лавка"}  # бар и розничная лавка не грузят поваров
 
-    units — количество, обрезанное до 10: платная доставка и весовой товар вбиваются
-    количеством, которое не отражает работу повара.
+
+def stations(cook_place):
+    """Цеха из места приготовления кассы: «Горячий + мангал» → ['горячий', 'мангал']."""
+    if not isinstance(cook_place, str) or not cook_place.strip():
+        return []
+    return [s.strip().lower() for s in cook_place.split("+")]
+
+
+def kitchen_lines(since="2026-05-01"):
+    """Позиции-блюда кухни (без бара, лавки, добавок и служебных) с каналом чека и цехами.
+
+    Цех берётся из места приготовления (cook_place, текущая настройка кассы); у блюд без него —
+    по названию категории. units — количество, обрезанное до 10: платная доставка и весовой
+    товар вбиваются количеством, которое не отражает работу повара.
     """
     d = load_dishes()
+    d["stations"] = d["cook_place"].map(stations) if "cook_place" in d else [[] for _ in range(len(d))]
     text = d["category_parent"].fillna("") + " " + d["category"].fillna("")
-    d["station"] = np.where(text.str.contains(BAR_PATTERN, case=False, regex=True), "bar", "kitchen")
+    by_name = np.where(text.str.contains(BAR_PATTERN, case=False, regex=True), "бар", "кухня")
+    d["stations"] = [st if st else [fallback] for st, fallback in zip(d["stations"], by_name)]
+    d["stations"] = d["stations"].map(lambda st: [s for s in st if s not in NOT_KITCHEN])
+    d = d[d["stations"].map(len) > 0]
     o = load_orders()[["order_id", "channel"]]
-    x = load_lines().merge(d[["dish_id", "item_type", "station"]], on="dish_id", how="left")
-    x = x[(x["item_type"] == "Блюдо") & (x["station"] == "kitchen") & (x["qty"] > 0)
-          & (x["add_time"] >= since)]
+    x = load_lines().merge(d[["dish_id", "item_type", "stations"]], on="dish_id", how="inner")
+    x = x[(x["item_type"] == "Блюдо") & (x["qty"] > 0) & (x["add_time"] >= since)]
     x = x.merge(o, on="order_id", how="left")
     x["units"] = x["qty"].clip(upper=10)
     return x
+
+
+def station_lines(since="2026-05-01"):
+    """То же по цехам: блюдо из нескольких цехов засчитывается каждому из них."""
+    return kitchen_lines(since).explode("stations").rename(columns={"stations": "station"})
 
 
 # ---------------------------------------------------------------- статистика
