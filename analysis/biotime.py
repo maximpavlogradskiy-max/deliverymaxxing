@@ -4,7 +4,8 @@
 ФИО сразу заменяются псевдонимом (первые 8 знаков sha1), в результат не попадают.
 
     from biotime import load_shifts
-    s = load_shifts()   # смена = сотрудник × день: emp, dept, position, date, start, end, hours
+    s = load_shifts()   # смена = сотрудник × день: emp, dept, position, date, start, end, hours, src
+                        # src — файл, строка «Приход» и столбец дня: по нему смену можно найти в CSV
 """
 import hashlib
 import re
@@ -33,12 +34,12 @@ def parse_file(path):
     halves = [_day_columns(lines[9]), _day_columns(lines[10])]   # дни 1–15 и 16–31
 
     blocks, current = [], None
-    for row in lines[11:]:
+    for line_no, row in enumerate(lines[11:], start=12):
         if row and row[0].startswith("Ответственное") or (len(row) > 1 and row[1].startswith("Ответственное")):
             break
         kind = row[7].strip() if len(row) > 7 else ""
         if kind == "Код":
-            current = {"labels": [], "rows": {}}
+            current = {"labels": [], "rows": {}, "line": {}}
             blocks.append(current)
         if current is None:
             continue
@@ -47,6 +48,7 @@ def parse_file(path):
             current["labels"].append(label)
         if kind in ("Факт", "Приход", "Уход"):
             current["rows"][kind] = row
+            current["line"][kind] = line_no
 
     shifts = []
     for k in range(0, len(blocks) - 1, 2):
@@ -67,7 +69,8 @@ def parse_file(path):
                 if end <= start:            # ушёл после полуночи
                     end += pd.Timedelta(days=1)
                 shifts.append({"emp": emp, "dept": dept, "position": position, "date": date,
-                               "start": start, "end": end})
+                               "start": start, "end": end,
+                               "src": f"{Path(path).name}, строка {block['line']['Приход']}, столбец {col + 1}"})
     s = pd.DataFrame(shifts)
     if len(s):
         s["hours"] = (s["end"] - s["start"]).dt.total_seconds() / 3600

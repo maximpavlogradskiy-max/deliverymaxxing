@@ -24,6 +24,8 @@ analysis/
   07_direct_vs_own_delivery.py  расход Директа на рекламу сайта vs заказы своей доставки
   08_staffing.py         смены курьеров и официантов (BioTime) против доставок и занятых столов
   09_kitchen_staffing.py повара по цехам (BioTime) против потока блюд, сколько нужно по часам
+  10_shift_times.py      во сколько приходят и уходят повара; ссылка на файл, строку и столбец CSV
+  11_push_hours.py       часы с запасом мощности кухни и курьеров, окупаемость скидки по часам
   biotime.py             разбор выгрузок BioTime, ФИО сразу заменяются псевдонимами
   experiment_schedule.py расписание эксперимента со ставками (сбалансированные случайные дни)
   yandex_api.py          Директ и Метрика: цели кампаний, конверсии, посадочные, заказы с сайта
@@ -40,7 +42,7 @@ data/raw/                выгрузки (в git не попадают)
 | `vendor_promo_weekly.xlsx` | Яндекс Еда Вендор → продвижение: отчёт по неделям и витринам |
 | `fact_rk7_hourly.csv`, `fact_rk7_payments_daily.csv` | витрины r_keeper (`marts/`) |
 | `riga_orders.parquet`, `riga_lines.parquet`, `dim_dish.parquet`, `dim_category.parquet`, `riga_sh_daily.parquet` | `build_riga_pilot.py` из витрин `marts/` |
-| `biotime/<отдел>_<ГГГГ-ММ>.csv` (`delivery_`, `waiters_`, `kitchen_2026-06.csv`) | BioTime 8 → «Табель учёта рабочего времени», CSV |
+| `biotime/<отдел>_<ГГГГ-ММ>.csv` (`delivery_`, `waiters_`, `kitchen_`, например `kitchen_2026-06.csv`) | BioTime 8 → «Табель учёта рабочего времени», CSV |
 
 Данные коммерческие: в репозиторий их не кладём, `data/` в `.gitignore`.
 
