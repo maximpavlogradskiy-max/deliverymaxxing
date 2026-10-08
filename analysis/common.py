@@ -161,6 +161,63 @@ def station_lines(since="2026-05-01"):
     return kitchen_lines(since).explode("stations").rename(columns={"stations": "station"})
 
 
+HALLS = ["Зал 1эт", "Зал 2эт", "Веранда1", "Веранда2"]
+
+
+def hall_visits(since="2026-05-01"):
+    """Визиты зала со столом. 10 минут – 6 часов: короче — навынос, длиннее — забытые открытые чеки.
+
+    table — физический стол: «28,1» — дополнительный чек стола 28.
+    """
+    o = load_orders()
+    h = o[(o["is_visit"] == 1) & o["hall"].isin(HALLS) & (o["date"] >= since)
+          & o["duration_min"].between(10, 360) & o["table_name"].notna()].copy()
+    h["table"] = h["hall"] + " / " + h["table_name"].str.split(",").str[0].str.strip()
+    return h
+
+
+def table_occupancy(h, freq="15min"):
+    """Занятые и работающие столы по залам на сетке 10:00–22:45.
+
+    Стол занят, пока на нём открыт хотя бы один чек. Работающие столы зала — сколько разных столов
+    было в чеках в этом месяце; веранды считаются только в дни, когда на них были гости.
+    Возвращает (occ, cap, capacity_month), у occ и cap есть колонка total.
+    """
+    busy = []
+    for table, g in h.sort_values("open_time").groupby("table"):
+        start, end = None, None
+        for a, b in zip(g["open_time"], g["close_time"]):
+            if start is None or a > end:
+                if start is not None:
+                    busy.append((table, start, end))
+                start, end = a, b
+            else:
+                end = max(end, b)
+        busy.append((table, start, end))
+    busy = pd.DataFrame(busy, columns=["table", "start", "end"])
+    busy["hall"] = busy["table"].str.split(" / ").str[0]
+
+    first = h["open_time"].min().normalize()
+    grid = pd.date_range(first + pd.Timedelta("09:00:00"), h["close_time"].max().floor("D") + pd.Timedelta("23:45:00"),
+                         freq=freq)
+    grid = grid[(grid.hour >= 10) & (grid.hour <= 22)]
+    occ = pd.DataFrame(index=grid)
+    for hall, g in busy.groupby("hall"):
+        s, e = np.sort(g["start"].values), np.sort(g["end"].values)
+        occ[hall] = np.searchsorted(s, grid.values, side="right") - np.searchsorted(e, grid.values, side="right")
+
+    capacity_month = h.groupby([h["date"].dt.to_period("M"), "hall"])["table"].nunique().unstack()
+    open_days = h.groupby([h["date"], "hall"]).size().unstack().notna()
+    cap = pd.DataFrame(index=grid, columns=HALLS, dtype=float)
+    for hall in HALLS:
+        per_month = capacity_month[hall].reindex(grid.to_period("M")).to_numpy()
+        is_open = open_days[hall].reindex(grid.normalize(), fill_value=False).to_numpy()
+        cap[hall] = np.where(is_open, per_month, 0)
+    occ = occ.reindex(columns=HALLS, fill_value=0)
+    occ["total"], cap["total"] = occ[HALLS].sum(axis=1), cap[HALLS].sum(axis=1)
+    return occ, cap, capacity_month
+
+
 # ---------------------------------------------------------------- статистика
 
 def window_sum(times, values, at, minutes):
