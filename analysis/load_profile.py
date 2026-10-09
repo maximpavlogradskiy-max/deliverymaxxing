@@ -5,8 +5,13 @@
 2. Посадка зала: доля занятых столов от работающих (06_hall_occupancy), среднее и 10–90-й процентили
    по 15-минутным отсчётам внутри получаса.
 
-    from load_profile import half_hour_profile
-    p = half_hour_profile()          # индекс (weekend, slot)
+    from load_profile import half_hour_profile, hourly_by_restaurant
+    p = half_hour_profile()          # Архангельское: индекс (weekend, slot)
+    r = hourly_by_restaurant()       # все рестораны: rest, weekend, hour, checks
+
+Для всех ресторанов есть только витрина r_keeper по часам: оплаченные чеки (зал, навынос и доставка
+вместе — поле канала в витрине сломано) по часу открытия чека. Посадку зала по столам можно посчитать
+только там, где есть выгрузка чеков со столами (сейчас — Архангельское).
 
     python analysis/load_profile.py [out.csv]
 """
@@ -14,7 +19,7 @@ import sys
 
 import pandas as pd
 
-from common import hall_visits, load_orders, load_vendor_orders, pay_channel, table_occupancy
+from common import hall_visits, load_orders, load_rk_hourly, load_vendor_orders, pay_channel, table_occupancy
 
 CHANNELS = ["зал", "агрегаторы", "своя доставка"]
 
@@ -52,6 +57,26 @@ def half_hour_profile(since="2026-05-01", until="2026-10-01", first="10:00", las
     seat.index = seat.index.set_names(["weekend", "slot"])
     seat.columns = ["посадка, %", "p10, %", "p90, %"]
     return table.join(seat, how="outer")
+
+
+def hourly_by_restaurant(since="2026-05-01", until="2026-10-01", first=9, last=23):
+    """Оплаченных чеков в час (в среднем за день) по ресторанам, будни и выходные отдельно.
+
+    Дни считаются от первого дня с чеками в ресторане (PERM открылся 10.06.2026).
+    """
+    h = load_rk_hourly()
+    h["date"] = pd.to_datetime(h["date"])
+    h = h[(h["date"] >= since) & (h["date"] < until)]
+    h["weekend"] = h["date"].dt.dayofweek >= 5
+    first_day = h.groupby("rest")["date"].min()
+    days = pd.DataFrame([(rest, d) for rest, start in first_day.items()
+                         for d in pd.date_range(start, until, inclusive="left")], columns=["rest", "date"])
+    n_days = days.groupby(["rest", days["date"].dt.dayofweek >= 5]).size()
+    out = h.groupby(["rest", "weekend", "hour"])["paid_orders"].sum().rename("checks").reset_index()
+    out["checks"] = out["checks"] / pd.MultiIndex.from_frame(out[["rest", "weekend"]]).map(n_days)
+    out = out[out["hour"].between(first, last)]
+    grid = pd.MultiIndex.from_product([first_day.index, [False, True], range(first, last + 1)], names=["rest", "weekend", "hour"])
+    return out.set_index(["rest", "weekend", "hour"])["checks"].reindex(grid, fill_value=0).reset_index()
 
 
 if __name__ == "__main__":
