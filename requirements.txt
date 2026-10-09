@@ -2,3 +2,5 @@ numpy
 pandas>=2.2
 pyarrow
 openpyxl
+matplotlib
+jupyter
