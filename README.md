@@ -5,6 +5,7 @@
 (в r_keeper `RIGA`, в Яндекс Еда Вендор — «деревня Воронки, 1к4»).
 
 - [docs/plan.md](docs/plan.md) — что уже известно и что делаем дальше.
+- [docs/brief_for_local_chat.md](docs/brief_for_local_chat.md) — сводка для сессии с доступом к компьютеру: что проверить в кабинетах.
 - [docs/model.md](docs/model.md) — математическая постановка задачи.
 - [docs/findings.md](docs/findings.md) — что уже показали данные, открытые вопросы и запросы данных.
 - [docs/data_requests.md](docs/data_requests.md) — какие данные запросить и у кого.
